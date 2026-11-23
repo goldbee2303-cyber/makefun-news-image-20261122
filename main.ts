@@ -54,6 +54,33 @@ if (bitDepth !== 8) {
 if (colourType < 2 || colourType > 6) {
   fail(`entry.png has colour type ${colourType}; expected 2-6`);
 }
+
+// Every PNG chunk ends with a CRC32 over its type and data bytes. Checking
+// the IHDR checksum catches a header that was edited by hand after the
+// image was written (for example a width patched without re-encoding).
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n += 1) {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function crc32(bytes) {
+  let c = 0xffffffff;
+  for (const b of bytes) {
+    c = CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+const ihdrCrcStored = image.readUInt32BE(29);
+const ihdrCrcActual = crc32(image.subarray(12, 29));
+if (ihdrCrcStored !== ihdrCrcActual) {
+  fail('entry.png has a bad IHDR checksum');
+}
 if (image.length > 1048576) {
   fail(`entry.png is ${image.length} bytes; the limit is 1048576`);
 }
